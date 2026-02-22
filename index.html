@@ -1,0 +1,15 @@
+<form action="http://localhost:3000/register" method="POST">
+    <label>Email:</label>
+    <input type="email" name="email" required>
+
+    <label>Contraseña:</label>
+    <input type="password" name="password" pattern="(?=.*\d)(?=.*[A-Z]).{8,}"
+        title="Mínimo 8 caracteres, una mayúscula y un número" required>
+
+    <div class="terms">
+        <input type="checkbox" name="acceptTerms" id="terms" required>
+        <label for="terms">Acepto los términos y condiciones</label>
+    </div>
+
+    <button type="submit">Registrarse</button>
+</form>
