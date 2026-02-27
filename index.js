@@ -13,7 +13,7 @@ app.use(express.urlencoded({ extended: true }));
 const db = mysql.createConnection({
     host: 'localhost',
     user: 'root',
-    password: '',
+    password: 'Lorenaxd23::q',
     database: 'mi_app'
 });
 
@@ -131,19 +131,48 @@ app.patch('/users/:id', async (req, res) => {
     }
 });
 
-// Ruta para eliminar a un usuario (DELETE)
-app.delete('/users/:id', async (req, res) => {
-    const { id } = req.params;
+// Ruta para el inicio de sesión (Login)
+app.post('/login', async (req, res) => {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+        return res.status(400).send("Debes enviar email y contraseña.");
+    }
 
     try {
-        const [result] = await db.promise().query('DELETE FROM usuarios WHERE id = ?', [id]);
+        // 1. Buscar al usuario por correo
+        const [rows] = await db.promise().query('SELECT * FROM usuarios WHERE email = ?', [email]);
 
-        if (result.affectedRows === 0) return res.status(404).send("Usuario no encontrado.");
-        res.status(200).send("Usuario eliminado con éxito.");
+        if (rows.length === 0) {
+            return res.status(401).send("Correo o contraseña incorrectos.");
+        }
+
+        const user = rows[0];
+
+        // 2. Verificar la contraseña
+        const isPasswordValid = await bcrypt.compare(password, user.password);
+
+        if (!isPasswordValid) {
+            return res.status(401).send("Correo o contraseña incorrectos.");
+        }
+
+        // 3. Login exitoso
+        // Nota: En una app real, aquí generarías un JWT o manejarías una sesión.
+        // Por ahora, devolvemos los datos del usuario para simplificar.
+        res.status(200).json({
+            message: "¡Inicio de sesión exitoso!",
+            user: {
+                id: user.id,
+                email: user.email
+            }
+        });
+
     } catch (error) {
         console.error(error);
         res.status(500).send("Error interno del servidor.");
     }
 });
 
-app.listen(3000, () => console.log('Servidor corriendo en http://localhost:3000'));
+// Ruta para eliminar a un usuario (DELETE)
+
+app.listen(3001, () => console.log('Servidor corriendo en http://localhost:3001'));
