@@ -23,18 +23,27 @@ app.post('/register', async (req, res) => {
 
     // 1. Validación: Aceptar términos y condiciones
     if (!acceptTerms) {
-        return res.status(400).send("Debes aceptar los términos y condiciones.");
+        return res.status(400).json({ 
+            success: false, 
+            message: "Debes aceptar los términos y condiciones." 
+        });
     }
 
     // 2. Validación: Campos requeridos
     if (!email || !password || !firstName || !lastName || !phone) {
-        return res.status(400).send("Por favor completa todos los campos requeridos.");
+        return res.status(400).json({ 
+            success: false, 
+            message: "Por favor completa todos los campos requeridos." 
+        });
     }
 
     // 3. Validación: Requisitos de la contraseña (Mín 8, 1 Mayús, 1 Núm)
     const passwordRegex = /^(?=.*[A-Z])(?=.*\d).{8,}$/;
     if (!passwordRegex.test(password)) {
-        return res.status(400).send("La contraseña debe tener al menos 8 caracteres, una mayúscula y un número.");
+        return res.status(400).json({ 
+            success: false, 
+            message: "La contraseña debe tener al menos 8 caracteres, una mayúscula y un número." 
+        });
     }
 
     try {
@@ -42,23 +51,33 @@ app.post('/register', async (req, res) => {
         const [rows] = await db.promise().query('SELECT * FROM usuarios WHERE email = ?', [email]);
 
         if (rows.length > 0) {
-            return res.status(400).send("El correo electrónico ya está registrado.");
+            return res.status(400).json({ 
+                success: false, 
+                message: "El correo electrónico ya está registrado." 
+            });
         }
 
         // 5. Encriptar contraseña
         const hashedPassword = await bcrypt.hash(password, 10);
 
         // 6. Guardar en la base de datos
-        await db.promise().query(
+        const [result] = await db.promise().query(
             'INSERT INTO usuarios (email, password, first_name, last_name, phone) VALUES (?, ?, ?, ?, ?)',
             [email, hashedPassword, firstName, lastName, phone]
         );
 
-        res.status(201).send("¡Usuario registrado con éxito!");
+        res.status(201).json({ 
+            success: true, 
+            message: "¡Usuario registrado con éxito!",
+            userId: result.insertId
+        });
 
     } catch (error) {
         console.error(error);
-        res.status(500).send("Error interno del servidor.");
+        res.status(500).json({ 
+            success: false, 
+            message: "Error interno del servidor." 
+        });
     }
 });
 
