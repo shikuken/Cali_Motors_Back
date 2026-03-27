@@ -1,20 +1,23 @@
 const express = require('express');
-const mysql = require('mysql2');
+const { Pool } = require('pg');
 const bcrypt = require('bcrypt');
-const cors = require('cors'); // <--- NUEVA LÍNEA 1
+const cors = require('cors');
+require('dotenv').config();
 
 const app = express();
 
-app.use(cors()); // <--- NUEVA LÍNEA 2: Permite que tu HTML hable con el servidor
+app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Configuración de la conexión a MySQL
-const db = mysql.createConnection({
-    host: 'localhost',
-    user: 'root',
-    password: '',
-    database: 'mi_app'
+// Configuración de la conexión a Neon (PostgreSQL)
+const db = new Pool({
+    connectionString: process.env.DATABASE_URL
+});
+
+// Verificar conexión
+db.on('error', (err) => {
+    console.error('Error en la conexión a Neon:', err);
 });
 
 // Ruta para el registro de usuarios
@@ -48,9 +51,9 @@ app.post('/register', async (req, res) => {
 
     try {
         // 4. Validación: ¿El correo ya existe?
-        const [rows] = await db.promise().query('SELECT * FROM usuarios WHERE email = ?', [email]);
+        const result = await db.query('SELECT * FROM usuarios WHERE email = $1', [email]);
 
-        if (rows.length > 0) {
+        if (result.rows.length > 0) {
             return res.status(400).json({ 
                 success: false, 
                 message: "El correo electrónico ya está registrado." 
@@ -61,15 +64,15 @@ app.post('/register', async (req, res) => {
         const hashedPassword = await bcrypt.hash(password, 10);
 
         // 6. Guardar en la base de datos
-        const [result] = await db.promise().query(
-            'INSERT INTO usuarios (email, password, first_name, last_name, phone) VALUES (?, ?, ?, ?, ?)',
+        const insertResult = await db.query(
+            'INSERT INTO usuarios (email, password, first_name, last_name, phone) VALUES ($1, $2, $3, $4, $5) RETURNING id',
             [email, hashedPassword, firstName, lastName, phone]
         );
 
         res.status(201).json({ 
             success: true, 
             message: "¡Usuario registrado con éxito!",
-            userId: result.insertId
+            userId: insertResult.rows[0].id
         });
 
     } catch (error) {
@@ -84,8 +87,8 @@ app.post('/register', async (req, res) => {
 // Ruta para obtener todos los usuarios (para probar en Postman)
 app.get('/users', async (req, res) => {
     try {
-        const [rows] = await db.promise().query('SELECT id, email, first_name, last_name, phone, creado_en FROM usuarios');
-        res.status(200).json(rows);
+        const result = await db.query('SELECT id, email, first_name, last_name, phone, creado_en FROM usuarios');
+        res.status(200).json(result.rows);
     } catch (error) {
         console.error(error);
         res.status(500).send("Error interno del servidor al obtener usuarios.");
@@ -103,12 +106,12 @@ app.put('/users/:id', async (req, res) => {
 
     try {
         const hashedPassword = await bcrypt.hash(password, 10);
-        const [result] = await db.promise().query(
-            'UPDATE usuarios SET email = ?, password = ?, first_name = ?, last_name = ?, phone = ? WHERE id = ?',
+        const result = await db.query(
+            'UPDATE usuarios SET email = $1, password = $2, first_name = $3, last_name = $4, phone = $5 WHERE id = $6',
             [email, hashedPassword, firstName, lastName, phone, id]
         );
 
-        if (result.affectedRows === 0) return res.status(404).send("Usuario no encontrado.");
+        if (result.rowCount === 0) return res.status(404).send("Usuario no encontrado.");
         res.status(200).send("Usuario actualizado completamente.");
     } catch (error) {
         console.error(error);
@@ -131,39 +134,40 @@ app.patch('/users/:id', async (req, res) => {
         let query = 'UPDATE usuarios SET ';
         const values = [];
         const updates = [];
+        let paramIndex = 1;
 
         if (email) {
-            updates.push('email = ?');
+            updates.push(`email = $${paramIndex++}`);
             values.push(email);
         }
 
         if (password) {
             const hashedPassword = await bcrypt.hash(password, 10);
-            updates.push('password = ?');
+            updates.push(`password = $${paramIndex++}`);
             values.push(hashedPassword);
         }
 
         if (firstName) {
-            updates.push('first_name = ?');
+            updates.push(`first_name = $${paramIndex++}`);
             values.push(firstName);
         }
 
         if (lastName) {
-            updates.push('last_name = ?');
+            updates.push(`last_name = $${paramIndex++}`);
             values.push(lastName);
         }
 
         if (phone) {
-            updates.push('phone = ?');
+            updates.push(`phone = $${paramIndex++}`);
             values.push(phone);
         }
 
-        query += updates.join(', ') + ' WHERE id = ?';
+        query += updates.join(', ') + ` WHERE id = $${paramIndex}`;
         values.push(id);
 
-        const [result] = await db.promise().query(query, values);
+        const result = await db.query(query, values);
 
-        if (result.affectedRows === 0) return res.status(404).send("Usuario no encontrado.");
+        if (result.rowCount === 0) return res.status(404).send("Usuario no encontrado.");
         res.status(200).send("Usuario actualizado parcialmente.");
     } catch (error) {
         console.error(error);
@@ -181,13 +185,13 @@ app.post('/login', async (req, res) => {
 
     try {
         // 1. Buscar al usuario por correo
-        const [rows] = await db.promise().query('SELECT * FROM usuarios WHERE email = ?', [email]);
+        const result = await db.query('SELECT * FROM usuarios WHERE email = $1', [email]);
 
-        if (rows.length === 0) {
+        if (result.rows.length === 0) {
             return res.status(401).send("Correo o contraseña incorrectos.");
         }
 
-        const user = rows[0];
+        const user = result.rows[0];
 
         // 2. Verificar la contraseña
         const isPasswordValid = await bcrypt.compare(password, user.password);
@@ -224,19 +228,19 @@ app.delete('/users/:id', async (req, res) => {
 
     try {
         // Verificar que el usuario existe antes de eliminarlo
-        const [rows] = await db.promise().query('SELECT * FROM usuarios WHERE id = ?', [id]);
+        const checkResult = await db.query('SELECT * FROM usuarios WHERE id = $1', [id]);
 
-        if (rows.length === 0) {
+        if (checkResult.rows.length === 0) {
             return res.status(404).send("Usuario no encontrado.");
         }
 
         // Eliminar el usuario
-        const [result] = await db.promise().query(
-            'DELETE FROM usuarios WHERE id = ?',
+        const deleteResult = await db.query(
+            'DELETE FROM usuarios WHERE id = $1',
             [id]
         );
 
-        if (result.affectedRows === 0) {
+        if (deleteResult.rowCount === 0) {
             return res.status(404).send("No se pudo eliminar el usuario.");
         }
 
@@ -245,6 +249,142 @@ app.delete('/users/:id', async (req, res) => {
     } catch (error) {
         console.error(error);
         res.status(500).send("Error interno del servidor.");
+    }
+});
+
+// Ruta para publicar un nuevo vehículo (POST)
+app.post('/vehicles', async (req, res) => {
+    const { userId, marca, modelo, año, precio, kilometraje, descripcion, imagen } = req.body;
+
+    // Validación: Campos requeridos
+    if (!userId || !marca || !modelo || !año || !precio) {
+        return res.status(400).json({ 
+            success: false, 
+            message: "Completa todos los campos obligatorios (userId, marca, modelo, año, precio)." 
+        });
+    }
+
+    try {
+        // Verificar que el usuario existe
+        const userCheck = await db.query('SELECT * FROM usuarios WHERE id = $1', [userId]);
+        if (userCheck.rows.length === 0) {
+            return res.status(404).json({ 
+                success: false, 
+                message: "Usuario no encontrado." 
+            });
+        }
+
+        // Insertar el vehículo en la base de datos
+        const result = await db.query(
+            'INSERT INTO vehiculos (user_id, marca, modelo, año, precio, kilometraje, descripcion, imagen, estado) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id',
+            [userId, marca, modelo, año, precio, kilometraje || 0, descripcion || '', imagen || null, 'Activo']
+        );
+
+        res.status(201).json({ 
+            success: true, 
+            message: "¡Vehículo publicado exitosamente!",
+            vehicleId: result.rows[0].id
+        });
+
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ 
+            success: false, 
+            message: "Error interno del servidor." 
+        });
+    }
+});
+
+// Ruta para obtener todos los vehículos (GET)
+app.get('/vehicles', async (req, res) => {
+    try {
+        const result = await db.query(
+            'SELECT v.id, v.user_id, u.email, u.first_name, u.last_name, v.marca, v.modelo, v.año, v.precio, v.kilometraje, v.descripcion, v.creado_en FROM vehiculos v JOIN usuarios u ON v.user_id = u.id ORDER BY v.creado_en DESC'
+        );
+        res.status(200).json(result.rows);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ 
+            success: false, 
+            message: "Error interno del servidor." 
+        });
+    }
+});
+
+// Ruta para obtener vehículos de un usuario específico (GET)
+app.get('/vehicles/user/:userId', async (req, res) => {
+    const { userId } = req.params;
+
+    try {
+        const result = await db.query(
+            'SELECT id, user_id, marca, modelo, año, precio, kilometraje, descripcion, imagen, estado, creado_en FROM vehiculos WHERE user_id = $1 ORDER BY creado_en DESC',
+            [userId]
+        );
+        res.status(200).json(result.rows);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ 
+            success: false, 
+            message: "Error interno del servidor." 
+        });
+    }
+});
+
+// Ruta para actualizar un vehículo (PUT)
+app.put('/vehicles/:id', async (req, res) => {
+    const { id } = req.params;
+    const { marca, modelo, año, precio, kilometraje, descripcion, estado, imagen } = req.body;
+
+    try {
+        const result = await db.query(
+            'UPDATE vehiculos SET marca = $1, modelo = $2, año = $3, precio = $4, kilometraje = $5, descripcion = $6, estado = $7, imagen = $8, actualizado_en = CURRENT_TIMESTAMP WHERE id = $9',
+            [marca, modelo, año, precio, kilometraje || 0, descripcion || '', estado || 'Activo', imagen || null, id]
+        );
+
+        if (result.rowCount === 0) {
+            return res.status(404).json({ 
+                success: false, 
+                message: "Vehículo no encontrado." 
+            });
+        }
+
+        res.status(200).json({ 
+            success: true, 
+            message: "Vehículo actualizado correctamente." 
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ 
+            success: false, 
+            message: "Error interno del servidor." 
+        });
+    }
+});
+
+// Ruta para eliminar un vehículo (DELETE)
+app.delete('/vehicles/:id', async (req, res) => {
+    const { id } = req.params;
+
+    try {
+        const result = await db.query('DELETE FROM vehiculos WHERE id = $1', [id]);
+
+        if (result.rowCount === 0) {
+            return res.status(404).json({ 
+                success: false, 
+                message: "Vehículo no encontrado." 
+            });
+        }
+
+        res.status(200).json({ 
+            success: true, 
+            message: "Vehículo eliminado correctamente." 
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ 
+            success: false, 
+            message: "Error interno del servidor." 
+        });
     }
 });
 
