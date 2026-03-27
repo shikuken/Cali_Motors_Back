@@ -26,26 +26,26 @@ app.post('/register', async (req, res) => {
 
     // 1. Validación: Aceptar términos y condiciones
     if (!acceptTerms) {
-        return res.status(400).json({ 
-            success: false, 
-            message: "Debes aceptar los términos y condiciones." 
+        return res.status(400).json({
+            success: false,
+            message: "Debes aceptar los términos y condiciones."
         });
     }
 
     // 2. Validación: Campos requeridos
     if (!email || !password || !firstName || !lastName || !phone) {
-        return res.status(400).json({ 
-            success: false, 
-            message: "Por favor completa todos los campos requeridos." 
+        return res.status(400).json({
+            success: false,
+            message: "Por favor completa todos los campos requeridos."
         });
     }
 
     // 3. Validación: Requisitos de la contraseña (Mín 8, 1 Mayús, 1 Núm)
     const passwordRegex = /^(?=.*[A-Z])(?=.*\d).{8,}$/;
     if (!passwordRegex.test(password)) {
-        return res.status(400).json({ 
-            success: false, 
-            message: "La contraseña debe tener al menos 8 caracteres, una mayúscula y un número." 
+        return res.status(400).json({
+            success: false,
+            message: "La contraseña debe tener al menos 8 caracteres, una mayúscula y un número."
         });
     }
 
@@ -54,9 +54,9 @@ app.post('/register', async (req, res) => {
         const result = await db.query('SELECT * FROM usuarios WHERE email = $1', [email]);
 
         if (result.rows.length > 0) {
-            return res.status(400).json({ 
-                success: false, 
-                message: "El correo electrónico ya está registrado." 
+            return res.status(400).json({
+                success: false,
+                message: "El correo electrónico ya está registrado."
             });
         }
 
@@ -69,17 +69,17 @@ app.post('/register', async (req, res) => {
             [email, hashedPassword, firstName, lastName, phone]
         );
 
-        res.status(201).json({ 
-            success: true, 
+        res.status(201).json({
+            success: true,
             message: "¡Usuario registrado con éxito!",
             userId: insertResult.rows[0].id
         });
 
     } catch (error) {
         console.error(error);
-        res.status(500).json({ 
-            success: false, 
-            message: "Error interno del servidor." 
+        res.status(500).json({
+            success: false,
+            message: "Error interno del servidor."
         });
     }
 });
@@ -258,9 +258,9 @@ app.post('/vehicles', async (req, res) => {
 
     // Validación: Campos requeridos
     if (!userId || !marca || !modelo || !año || !precio) {
-        return res.status(400).json({ 
-            success: false, 
-            message: "Completa todos los campos obligatorios (userId, marca, modelo, año, precio)." 
+        return res.status(400).json({
+            success: false,
+            message: "Completa todos los campos obligatorios (userId, marca, modelo, año, precio)."
         });
     }
 
@@ -268,9 +268,9 @@ app.post('/vehicles', async (req, res) => {
         // Verificar que el usuario existe
         const userCheck = await db.query('SELECT * FROM usuarios WHERE id = $1', [userId]);
         if (userCheck.rows.length === 0) {
-            return res.status(404).json({ 
-                success: false, 
-                message: "Usuario no encontrado." 
+            return res.status(404).json({
+                success: false,
+                message: "Usuario no encontrado."
             });
         }
 
@@ -280,17 +280,17 @@ app.post('/vehicles', async (req, res) => {
             [userId, marca, modelo, año, precio, kilometraje || 0, descripcion || '', imagen || null, 'Activo']
         );
 
-        res.status(201).json({ 
-            success: true, 
+        res.status(201).json({
+            success: true,
             message: "¡Vehículo publicado exitosamente!",
             vehicleId: result.rows[0].id
         });
 
     } catch (error) {
         console.error(error);
-        res.status(500).json({ 
-            success: false, 
-            message: "Error interno del servidor." 
+        res.status(500).json({
+            success: false,
+            message: "Error interno del servidor."
         });
     }
 });
@@ -304,10 +304,29 @@ app.get('/vehicles', async (req, res) => {
         res.status(200).json(result.rows);
     } catch (error) {
         console.error(error);
-        res.status(500).json({ 
-            success: false, 
-            message: "Error interno del servidor." 
+        res.status(500).json({
+            success: false,
+            message: "Error interno del servidor."
         });
+    }
+});
+
+// Ruta para obtener un vehículo específico (GET)
+app.get('/vehicles/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const result = await db.query(
+            'SELECT v.id, v.user_id, u.email, u.first_name, u.last_name, v.marca, v.modelo, v.año, v.precio, v.kilometraje, v.descripcion, v.estado, v.imagen, v.creado_en FROM vehiculos v JOIN usuarios u ON v.user_id = u.id WHERE v.id = $1',
+            [id]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ success: false, message: "Vehículo no encontrado." });
+        }
+        res.status(200).json(result.rows[0]);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, message: "Error interno del servidor." });
     }
 });
 
@@ -323,9 +342,9 @@ app.get('/vehicles/user/:userId', async (req, res) => {
         res.status(200).json(result.rows);
     } catch (error) {
         console.error(error);
-        res.status(500).json({ 
-            success: false, 
-            message: "Error interno del servidor." 
+        res.status(500).json({
+            success: false,
+            message: "Error interno del servidor."
         });
     }
 });
@@ -342,21 +361,21 @@ app.put('/vehicles/:id', async (req, res) => {
         );
 
         if (result.rowCount === 0) {
-            return res.status(404).json({ 
-                success: false, 
-                message: "Vehículo no encontrado." 
+            return res.status(404).json({
+                success: false,
+                message: "Vehículo no encontrado."
             });
         }
 
-        res.status(200).json({ 
-            success: true, 
-            message: "Vehículo actualizado correctamente." 
+        res.status(200).json({
+            success: true,
+            message: "Vehículo actualizado correctamente."
         });
     } catch (error) {
         console.error(error);
-        res.status(500).json({ 
-            success: false, 
-            message: "Error interno del servidor." 
+        res.status(500).json({
+            success: false,
+            message: "Error interno del servidor."
         });
     }
 });
@@ -369,21 +388,21 @@ app.delete('/vehicles/:id', async (req, res) => {
         const result = await db.query('DELETE FROM vehiculos WHERE id = $1', [id]);
 
         if (result.rowCount === 0) {
-            return res.status(404).json({ 
-                success: false, 
-                message: "Vehículo no encontrado." 
+            return res.status(404).json({
+                success: false,
+                message: "Vehículo no encontrado."
             });
         }
 
-        res.status(200).json({ 
-            success: true, 
-            message: "Vehículo eliminado correctamente." 
+        res.status(200).json({
+            success: true,
+            message: "Vehículo eliminado correctamente."
         });
     } catch (error) {
         console.error(error);
-        res.status(500).json({ 
-            success: false, 
-            message: "Error interno del servidor." 
+        res.status(500).json({
+            success: false,
+            message: "Error interno del servidor."
         });
     }
 });
