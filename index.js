@@ -299,7 +299,7 @@ app.post('/vehicles', async (req, res) => {
 app.get('/vehicles', async (req, res) => {
     try {
         const result = await db.query(
-            'SELECT v.id, v.user_id, u.email, u.first_name, u.last_name, v.marca, v.modelo, v.año, v.precio, v.kilometraje, v.descripcion, v.creado_en FROM vehiculos v JOIN usuarios u ON v.user_id = u.id ORDER BY v.creado_en DESC'
+            'SELECT v.id, v.user_id, u.email, u.first_name, u.last_name, u.phone, v.marca, v.modelo, v.año, v.precio, v.kilometraje, v.descripcion, v.creado_en FROM vehiculos v JOIN usuarios u ON v.user_id = u.id ORDER BY v.creado_en DESC'
         );
         res.status(200).json(result.rows);
     } catch (error) {
@@ -316,7 +316,7 @@ app.get('/vehicles/:id', async (req, res) => {
     const { id } = req.params;
     try {
         const result = await db.query(
-            'SELECT v.id, v.user_id, u.email, u.first_name, u.last_name, v.marca, v.modelo, v.año, v.precio, v.kilometraje, v.descripcion, v.estado, v.imagen, v.creado_en FROM vehiculos v JOIN usuarios u ON v.user_id = u.id WHERE v.id = $1',
+            'SELECT v.id, v.user_id, u.email, u.first_name, u.last_name, u.phone, v.marca, v.modelo, v.año, v.precio, v.kilometraje, v.descripcion, v.estado, v.imagen, v.creado_en FROM vehiculos v JOIN usuarios u ON v.user_id = u.id WHERE v.id = $1',
             [id]
         );
 
@@ -352,12 +352,24 @@ app.get('/vehicles/user/:userId', async (req, res) => {
 // Ruta para actualizar un vehículo (PUT)
 app.put('/vehicles/:id', async (req, res) => {
     const { id } = req.params;
-    const { marca, modelo, año, precio, kilometraje, descripcion, estado, imagen } = req.body;
+    const { userId, marca, modelo, año, precio, kilometraje, descripcion, estado, imagen } = req.body;
+
+    if (!userId) {
+        return res.status(401).json({ success: false, message: "No autorizado. Falta userId." });
+    }
 
     try {
+        const vehicleCheck = await db.query('SELECT user_id FROM vehiculos WHERE id = $1', [id]);
+        if (vehicleCheck.rows.length === 0) {
+            return res.status(404).json({ success: false, message: "Vehículo no encontrado." });
+        }
+        if (vehicleCheck.rows[0].user_id !== userId) {
+            return res.status(403).json({ success: false, message: "No tienes permiso para editar este vehículo." });
+        }
+
         const result = await db.query(
-            'UPDATE vehiculos SET marca = $1, modelo = $2, año = $3, precio = $4, kilometraje = $5, descripcion = $6, estado = $7, imagen = $8, actualizado_en = CURRENT_TIMESTAMP WHERE id = $9',
-            [marca, modelo, año, precio, kilometraje || 0, descripcion || '', estado || 'Activo', imagen || null, id]
+            'UPDATE vehiculos SET marca = $1, modelo = $2, año = $3, precio = $4, kilometraje = $5, descripcion = $6, estado = $7, imagen = $8, actualizado_en = CURRENT_TIMESTAMP WHERE id = $9 AND user_id = $10',
+            [marca, modelo, año, precio, kilometraje || 0, descripcion || '', estado || 'Activo', imagen || null, id, userId]
         );
 
         if (result.rowCount === 0) {
