@@ -1,0 +1,604 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Cali Motors API",
+    "description": "API backend para el sistema de ventas y gestión de vehículos de Cali Motors.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:3001",
+      "description": "Servidor Local"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Usuarios",
+      "description": "Endpoints relacionados con la gestión de usuarios"
+    },
+    {
+      "name": "Vehículos",
+      "description": "Endpoints relacionados con la gestión de vehículos"
+    }
+  ],
+  "paths": {
+    "/register": {
+      "post": {
+        "tags": ["Usuarios"],
+        "summary": "Registrar un usuario",
+        "description": "Crea una cuenta nueva para un usuario.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegistroRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Usuario registrado con éxito",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "message": "¡Usuario registrado con éxito!",
+                  "userId": 1
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error en validación (términos no aceptados, campos vacíos, contraseña inválida, email existente)"
+          },
+          "500": {
+            "description": "Error interno del servidor"
+          }
+        }
+      }
+    },
+    "/login": {
+      "post": {
+        "tags": ["Usuarios"],
+        "summary": "Iniciar sesión",
+        "description": "Autentica al usuario usando email y contraseña.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Inicio de sesión exitoso",
+            "content": {
+              "application/json": {
+                "example": {
+                  "message": "¡Inicio de sesión exitoso!",
+                  "user": {
+                    "id": 1,
+                    "email": "correo@ejemplo.com"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Campos faltantes"
+          },
+          "401": {
+            "description": "Correo o contraseña incorrectos"
+          },
+          "500": {
+            "description": "Error interno del servidor"
+          }
+        }
+      }
+    },
+    "/users": {
+      "get": {
+        "tags": ["Usuarios"],
+        "summary": "Obtener usuarios",
+        "description": "Obtiene la lista de todos los usuarios registrados (Para pruebas).",
+        "responses": {
+          "200": {
+            "description": "Lista de usuarios",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/UsuarioDataResponse"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno del servidor"
+          }
+        }
+      }
+    },
+    "/users/{id}": {
+      "put": {
+        "tags": ["Usuarios"],
+        "summary": "Actualizar usuario completamente",
+        "description": "Reemplaza los datos completos de un usuario.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID del usuario"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UsuarioUpdateFull"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Usuario actualizado exitosamente"
+          },
+          "400": {
+            "description": "Campos incompletos"
+          },
+          "404": {
+            "description": "Usuario no encontrado"
+          },
+          "500": {
+            "description": "Error interno del servidor"
+          }
+        }
+      },
+      "patch": {
+        "tags": ["Usuarios"],
+        "summary": "Actualizar usuario parcialmente",
+        "description": "Actualiza uno o varios campos del usuario.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID del usuario"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UsuarioUpdatePartial"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Usuario actualizado parcialmente"
+          },
+          "400": {
+            "description": "Ningún campo proporcionado"
+          },
+          "404": {
+            "description": "Usuario no encontrado"
+          },
+          "500": {
+            "description": "Error interno del servidor"
+          }
+        }
+      },
+      "delete": {
+        "tags": ["Usuarios"],
+        "summary": "Eliminar usuario",
+        "description": "Elimina un usuario del sistema.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID del usuario"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Usuario eliminado exitosamente"
+          },
+          "400": {
+            "description": "ID inválido"
+          },
+          "404": {
+            "description": "Usuario no encontrado"
+          },
+          "500": {
+            "description": "Error interno del servidor"
+          }
+        }
+      }
+    },
+    "/vehicles": {
+      "post": {
+        "tags": ["Vehículos"],
+        "summary": "Publicar un vehículo",
+        "description": "Crea una nueva publicación de un vehículo vinculada a un usuario.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VehiculoCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Vehículo publicado exitosamente",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "message": "¡Vehículo publicado exitosamente!",
+                  "vehicleId": 10
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Campos obligatorios faltantes"
+          },
+          "404": {
+            "description": "Usuario no encontrado"
+          },
+          "500": {
+            "description": "Error interno del servidor"
+          }
+        }
+      },
+      "get": {
+        "tags": ["Vehículos"],
+        "summary": "Obtener todos los vehículos",
+        "description": "Devuelve la lista completa de vehículos y los datos de sus dueños.",
+        "responses": {
+          "200": {
+            "description": "Lista de vehículos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/VehiculoDataResponse"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno del servidor"
+          }
+        }
+      }
+    },
+    "/vehicles/{id}": {
+      "get": {
+        "tags": ["Vehículos"],
+        "summary": "Obtener un vehículo por ID",
+        "description": "Devuelve los detalles de un vehículo específico con la información de su usuario creador.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID del vehículo"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Detalles del vehículo",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VehiculoDataResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Vehículo no encontrado"
+          },
+          "500": {
+            "description": "Error interno del servidor"
+          }
+        }
+      },
+      "put": {
+        "tags": ["Vehículos"],
+        "summary": "Actualizar un vehículo",
+        "description": "Actualiza la información de un vehículo existente. Requiere validar la propiedad del vehículo con `userId`.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID del vehículo"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VehiculoUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Vehículo actualizado correctamente",
+            "content": {
+              "application/json": {
+                "example": {
+                  "success": true,
+                  "message": "Vehículo actualizado correctamente."
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Falta userId"
+          },
+          "403": {
+            "description": "No tienes permiso para editar este vehículo"
+          },
+          "404": {
+            "description": "Vehículo no encontrado"
+          },
+          "500": {
+            "description": "Error interno del servidor"
+          }
+        }
+      },
+      "delete": {
+        "tags": ["Vehículos"],
+        "summary": "Eliminar un vehículo",
+        "description": "Borra el registro de un vehículo. (No se está pidiendo `userId` aquí, pero depende de la lógica de backend)",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID del vehículo"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Vehículo eliminado correctamente"
+          },
+          "404": {
+            "description": "Vehículo no encontrado"
+          },
+          "500": {
+            "description": "Error interno del servidor"
+          }
+        }
+      }
+    },
+    "/vehicles/user/{userId}": {
+      "get": {
+        "tags": ["Vehículos"],
+        "summary": "Obtener vehículos de un usuario",
+        "description": "Devuelve la lista de vehículos creados por el usuario.",
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID del usuario propietario"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lista de vehículos del usuario",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/VehiculoBase"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error interno del servidor"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "RegistroRequest": {
+        "type": "object",
+        "required": ["email", "password", "firstName", "lastName", "phone", "acceptTerms"],
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "example": "test@calimotors.com"
+          },
+          "password": {
+            "type": "string",
+            "format": "password",
+            "example": "Password123!"
+          },
+          "firstName": {
+            "type": "string",
+            "example": "Juan"
+          },
+          "lastName": {
+            "type": "string",
+            "example": "Pérez"
+          },
+          "phone": {
+            "type": "string",
+            "example": "3001234567"
+          },
+          "acceptTerms": {
+            "type": "boolean",
+            "example": true
+          }
+        }
+      },
+      "LoginRequest": {
+        "type": "object",
+        "required": ["email", "password"],
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "example": "test@calimotors.com"
+          },
+          "password": {
+            "type": "string",
+            "format": "password",
+            "example": "Password123!"
+          }
+        }
+      },
+      "UsuarioDataResponse": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "example": 1 },
+          "email": { "type": "string", "example": "test@calimotors.com" },
+          "first_name": { "type": "string", "example": "Juan" },
+          "last_name": { "type": "string", "example": "Pérez" },
+          "phone": { "type": "string", "example": "3001234567" },
+          "creado_en": { "type": "string", "format": "date-time" }
+        }
+      },
+      "UsuarioUpdateFull": {
+        "type": "object",
+        "required": ["email", "password", "firstName", "lastName", "phone"],
+        "properties": {
+          "email": { "type": "string", "format": "email" },
+          "password": { "type": "string", "format": "password" },
+          "firstName": { "type": "string" },
+          "lastName": { "type": "string" },
+          "phone": { "type": "string" }
+        }
+      },
+      "UsuarioUpdatePartial": {
+        "type": "object",
+        "properties": {
+          "email": { "type": "string", "format": "email" },
+          "password": { "type": "string", "format": "password" },
+          "firstName": { "type": "string" },
+          "lastName": { "type": "string" },
+          "phone": { "type": "string" }
+        }
+      },
+      "VehiculoBase": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "example": 10 },
+          "user_id": { "type": "integer", "example": 1 },
+          "marca": { "type": "string", "example": "Toyota" },
+          "modelo": { "type": "string", "example": "Corolla" },
+          "año": { "type": "integer", "example": 2021 },
+          "precio": { "type": "number", "example": 60000000 },
+          "kilometraje": { "type": "integer", "example": 25000 },
+          "descripcion": { "type": "string", "example": "Excelente estado" },
+          "imagen": { "type": "string", "format": "url", "example": "https://url-imagen.com.jpg" },
+          "estado": { "type": "string", "example": "Activo" },
+          "creado_en": { "type": "string", "format": "date-time" }
+        }
+      },
+      "VehiculoDataResponse": {
+        "type": "object",
+        "allOf": [
+          { "$ref": "#/components/schemas/VehiculoBase" }
+        ],
+        "properties": {
+          "email": { "type": "string", "example": "test@calimotors.com" },
+          "first_name": { "type": "string", "example": "Juan" },
+          "last_name": { "type": "string", "example": "Pérez" },
+          "phone": { "type": "string", "example": "3001234567" }
+        }
+      },
+      "VehiculoCreate": {
+        "type": "object",
+        "required": ["userId", "marca", "modelo", "año", "precio"],
+        "properties": {
+          "userId": { "type": "integer", "example": 1 },
+          "marca": { "type": "string", "example": "Chevrolet" },
+          "modelo": { "type": "string", "example": "Tracker" },
+          "año": { "type": "integer", "example": 2022 },
+          "precio": { "type": "number", "example": 85000000 },
+          "kilometraje": { "type": "integer", "example": 15000 },
+          "descripcion": { "type": "string", "example": "Único dueño" },
+          "imagen": { "type": "string", "format": "url", "example": "https://url-imagen.com.jpg" }
+        }
+      },
+      "VehiculoUpdate": {
+        "type": "object",
+        "required": ["userId"],
+        "properties": {
+          "userId": { "type": "integer", "description": "Obligatorio para la validación", "example": 1 },
+          "marca": { "type": "string" },
+          "modelo": { "type": "string" },
+          "año": { "type": "integer" },
+          "precio": { "type": "number" },
+          "kilometraje": { "type": "integer" },
+          "descripcion": { "type": "string" },
+          "estado": { "type": "string", "example": "Vendido" },
+          "imagen": { "type": "string" }
+        }
+      }
+    },
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Actualmente la API no valida fuertemente este token para todos los endpoints, pero se añade como buena práctica si se decide implementar en el futuro."
+      }
+    }
+  }
+}
