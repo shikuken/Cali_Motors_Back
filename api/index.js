@@ -3,13 +3,14 @@ const { Pool } = require('pg');
 const bcrypt = require('bcrypt');
 const cors = require('cors');
 require('dotenv').config();
+const jwt = require('jsonwebtoken');
 const swaggerUi = require('swagger-ui-express');
 const swaggerDocument = require('./swagger.json');
 
 const app = express();
 
 app.use(cors({
-  origin: '*'
+    origin: '*'
 }));
 
 app.use(express.json({ limit: '4mb' }))
@@ -19,16 +20,31 @@ app.use(express.urlencoded({ extended: true, limit: '4mb' }))
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 
 const db = new Pool({
-  connectionString: process.env.DATABASE_URL,
+    connectionString: process.env.DATABASE_URL,
 });
 
 db.on('error', (err) => {
-  console.error('Error en la conexión a Neon:', err);
+    console.error('Error en la conexión a Neon:', err);
 });
 
 app.get('/', (req, res) => {
-  res.send('API Cali Motors funcionando');
+    res.send('API Cali Motors funcionando');
 });
+
+// Middleware para verificar token JWT
+const authenticateToken = (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+
+    if (!token) return res.status(401).json({ success: false, message: "Acceso denegado. Se requiere un token." });
+
+    jwt.verify(token, process.env.JWT_SECRET || 'calimotors_secret_key', (err, user) => {
+        if (err) return res.status(403).json({ success: false, message: "Token inválido o expirado." });
+        req.user = user;
+        next();
+    });
+};
+
 // Ruta para el registro de usuarios
 app.post('/register', async (req, res) => {
     const { email, password, firstName, lastName, phone, acceptTerms } = req.body;
@@ -120,7 +136,7 @@ app.get('/users/:id', async (req, res) => {
 });
 
 // Ruta para actualizar completamente a un usuario (PUT)
-app.put('/users/:id', async (req, res) => {
+app.put('/users/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
     const { email, password, firstName, lastName, phone } = req.body;
 
@@ -144,7 +160,7 @@ app.put('/users/:id', async (req, res) => {
 });
 
 // Ruta para actualizar parcialmente a un usuario (PATCH)
-app.patch('/users/:id', async (req, res) => {
+app.patch('/users/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
     const { email, password, firstName, lastName, phone } = req.body;
 
@@ -224,15 +240,20 @@ app.post('/login', async (req, res) => {
             return res.status(401).send("Correo o contraseña incorrectos.");
         }
 
-        // 3. Login exitoso
-        // Nota: En una app real, aquí generarías un JWT o manejarías una sesión.
-        // Por ahora, devolvemos los datos del usuario para simplificar.
+        // 3. Login exitoso con JWT (30 minutos)
+        const token = jwt.sign(
+            { id: user.id, email: user.email },
+            process.env.JWT_SECRET || 'calimotors_secret_key',
+            { expiresIn: '30m' }
+        );
+
         res.status(200).json({
             message: "¡Inicio de sesión exitoso!",
             user: {
                 id: user.id,
                 email: user.email
-            }
+            },
+            token
         });
 
     } catch (error) {
@@ -242,7 +263,7 @@ app.post('/login', async (req, res) => {
 });
 
 // Ruta para eliminar a un usuario (DELETE)
-app.delete('/users/:id', async (req, res) => {
+app.delete('/users/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
 
     // Validación: Verificar que el ID sea válido
@@ -277,7 +298,7 @@ app.delete('/users/:id', async (req, res) => {
 });
 
 // Ruta para publicar un nuevo vehículo (POST)
-app.post('/vehicles', async (req, res) => {
+app.post('/vehicles', authenticateToken, async (req, res) => {
     const { userId, marca, modelo, año, precio, kilometraje, descripcion, imagen } = req.body;
 
     // Validación: Campos requeridos
@@ -374,7 +395,7 @@ app.get('/vehicles/user/:userId', async (req, res) => {
 });
 
 // Ruta para actualizar un vehículo (PUT)
-app.put('/vehicles/:id', async (req, res) => {
+app.put('/vehicles/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
     const { userId, marca, modelo, año, precio, kilometraje, descripcion, estado, imagen } = req.body;
 
@@ -417,7 +438,7 @@ app.put('/vehicles/:id', async (req, res) => {
 });
 
 // Ruta para eliminar un vehículo (DELETE)
-app.delete('/vehicles/:id', async (req, res) => {
+app.delete('/vehicles/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
 
     try {
