@@ -104,6 +104,21 @@ app.get('/users', async (req, res) => {
     }
 });
 
+// Ruta para obtener un usuario específico (GET)
+app.get('/users/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const result = await db.query('SELECT id, email, first_name, last_name, phone, creado_en FROM usuarios WHERE id = $1', [id]);
+        if (result.rows.length === 0) {
+            return res.status(404).send("Usuario no encontrado.");
+        }
+        res.status(200).json(result.rows[0]);
+    } catch (error) {
+        console.error(error);
+        res.status(500).send("Error interno del servidor al obtener el usuario.");
+    }
+});
+
 // Ruta para actualizar completamente a un usuario (PUT)
 app.put('/users/:id', async (req, res) => {
     const { id } = req.params;
