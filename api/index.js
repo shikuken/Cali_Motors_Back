@@ -90,14 +90,30 @@ app.post('/register', async (req, res) => {
 
         // 6. Guardar en la base de datos
         const insertResult = await db.query(
-            'INSERT INTO usuarios (email, password, first_name, last_name, phone) VALUES ($1, $2, $3, $4, $5) RETURNING id',
-            [email, hashedPassword, firstName, lastName, phone]
+            'INSERT INTO usuarios (email, password, first_name, last_name, phone, rol) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, rol',
+            [email, hashedPassword, firstName, lastName, phone, 'cliente']
+        );
+
+        const newUser = insertResult.rows[0];
+
+        // 7. Login automático tras registro
+        const token = jwt.sign(
+            { id: newUser.id, email: email, rol: newUser.rol },
+            process.env.JWT_SECRET || 'calimotors_secret_key',
+            { expiresIn: '12h' }
         );
 
         res.status(201).json({
             success: true,
             message: "¡Usuario registrado con éxito!",
-            userId: insertResult.rows[0].id
+            user: {
+                id: newUser.id,
+                email: email,
+                rol: newUser.rol,
+                firstName: firstName,
+                lastName: lastName
+            },
+            token: token
         });
 
     } catch (error) {
@@ -112,7 +128,7 @@ app.post('/register', async (req, res) => {
 // Ruta para obtener todos los usuarios (para probar en Postman)
 app.get('/users', async (req, res) => {
     try {
-        const result = await db.query('SELECT id, email, first_name, last_name, phone, creado_en FROM usuarios');
+        const result = await db.query('SELECT id, email, first_name, last_name, phone, rol, creado_en FROM usuarios');
         res.status(200).json(result.rows);
     } catch (error) {
         console.error(error);
@@ -124,7 +140,7 @@ app.get('/users', async (req, res) => {
 app.get('/users/:id', async (req, res) => {
     const { id } = req.params;
     try {
-        const result = await db.query('SELECT id, email, first_name, last_name, phone, creado_en FROM usuarios WHERE id = $1', [id]);
+        const result = await db.query('SELECT id, email, first_name, last_name, phone, rol, creado_en FROM usuarios WHERE id = $1', [id]);
         if (result.rows.length === 0) {
             return res.status(404).send("Usuario no encontrado.");
         }
@@ -242,16 +258,17 @@ app.post('/login', async (req, res) => {
 
         // 3. Login exitoso con JWT (30 minutos)
         const token = jwt.sign(
-            { id: user.id, email: user.email },
+            { id: user.id, email: user.email, rol: user.rol },
             process.env.JWT_SECRET || 'calimotors_secret_key',
-            { expiresIn: '30m' }
+            { expiresIn: '12h' }
         );
 
         res.status(200).json({
             message: "¡Inicio de sesión exitoso!",
             user: {
                 id: user.id,
-                email: user.email
+                email: user.email,
+                rol: user.rol
             },
             token
         });
@@ -408,13 +425,17 @@ app.put('/vehicles/:id', authenticateToken, async (req, res) => {
         if (vehicleCheck.rows.length === 0) {
             return res.status(404).json({ success: false, message: "Vehículo no encontrado." });
         }
-        if (vehicleCheck.rows[0].user_id !== userId) {
+
+        const isAdmin = req.user && req.user.rol === 'admin';
+        const isOwner = vehicleCheck.rows[0].user_id === userId;
+
+        if (!isOwner && !isAdmin) {
             return res.status(403).json({ success: false, message: "No tienes permiso para editar este vehículo." });
         }
 
         const result = await db.query(
-            'UPDATE vehiculos SET marca = $1, modelo = $2, año = $3, precio = $4, kilometraje = $5, descripcion = $6, estado = $7, imagen = $8, actualizado_en = CURRENT_TIMESTAMP WHERE id = $9 AND user_id = $10',
-            [marca, modelo, año, precio, kilometraje || 0, descripcion || '', estado || 'Activo', imagen || null, id, userId]
+            'UPDATE vehiculos SET marca = $1, modelo = $2, año = $3, precio = $4, kilometraje = $5, descripcion = $6, estado = $7, imagen = $8, actualizado_en = CURRENT_TIMESTAMP WHERE id = $9',
+            [marca, modelo, año, precio, kilometraje || 0, descripcion || '', estado || 'Activo', imagen || null, id]
         );
 
         if (result.rowCount === 0) {
@@ -442,6 +463,18 @@ app.delete('/vehicles/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
 
     try {
+        const vehicleCheck = await db.query('SELECT user_id FROM vehiculos WHERE id = $1', [id]);
+        if (vehicleCheck.rows.length === 0) {
+            return res.status(404).json({ success: false, message: "Vehículo no encontrado." });
+        }
+
+        const isAdmin = req.user && req.user.rol === 'admin';
+        const isOwner = req.user && vehicleCheck.rows[0].user_id === req.user.id;
+
+        if (!isOwner && !isAdmin) {
+            return res.status(403).json({ success: false, message: "No tienes permiso para eliminar este vehículo." });
+        }
+
         const result = await db.query('DELETE FROM vehiculos WHERE id = $1', [id]);
 
         if (result.rowCount === 0) {
