@@ -27,6 +27,39 @@ db.on('error', (err) => {
     console.error('Error en la conexión a Neon:', err);
 });
 
+const initializeChatTables = async () => {
+    await db.query(`
+        CREATE TABLE IF NOT EXISTS conversaciones (
+            id SERIAL PRIMARY KEY,
+            vehicle_id INTEGER NOT NULL,
+            buyer_id INTEGER NOT NULL,
+            seller_id INTEGER NOT NULL,
+            creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            actualizado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(vehicle_id, buyer_id, seller_id)
+        )
+    `);
+
+    await db.query(`
+        CREATE TABLE IF NOT EXISTS mensajes (
+            id SERIAL PRIMARY KEY,
+            conversation_id INTEGER NOT NULL REFERENCES conversaciones(id) ON DELETE CASCADE,
+            sender_id INTEGER NOT NULL,
+            body TEXT NOT NULL,
+            status VARCHAR(20) NOT NULL DEFAULT 'sent',
+            read_at TIMESTAMP NULL,
+            creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    `);
+
+    await db.query('CREATE INDEX IF NOT EXISTS idx_conversaciones_users ON conversaciones (buyer_id, seller_id)');
+    await db.query('CREATE INDEX IF NOT EXISTS idx_mensajes_conversation ON mensajes (conversation_id, creado_en)');
+};
+
+initializeChatTables().catch((error) => {
+    console.error('Error inicializando tablas de chat:', error);
+});
+
 app.get('/', (req, res) => {
     res.send('API Cali Motors funcionando');
 });
@@ -494,6 +527,248 @@ app.delete('/vehicles/:id', authenticateToken, async (req, res) => {
             success: false,
             message: "Error interno del servidor."
         });
+    }
+});
+
+const getConversationForUser = async (conversationId, userId) => {
+    const result = await db.query(
+        `SELECT c.*
+         FROM conversaciones c
+         WHERE c.id = $1 AND (c.buyer_id = $2 OR c.seller_id = $2)`,
+        [conversationId, userId]
+    );
+
+    return result.rows[0];
+};
+
+app.get('/notifications', authenticateToken, async (req, res) => {
+    try {
+        const result = await db.query(
+            `SELECT COUNT(*)::int AS unread_messages
+             FROM mensajes m
+             JOIN conversaciones c ON c.id = m.conversation_id
+             WHERE (c.buyer_id = $1 OR c.seller_id = $1)
+               AND m.sender_id <> $1
+               AND m.status <> 'read'`,
+            [req.user.id]
+        );
+
+        res.status(200).json({
+            unreadMessages: result.rows[0]?.unread_messages || 0
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, message: "Error interno del servidor." });
+    }
+});
+
+app.get('/conversations', authenticateToken, async (req, res) => {
+    try {
+        const result = await db.query(
+            `SELECT
+                c.id,
+                c.vehicle_id,
+                c.buyer_id,
+                c.seller_id,
+                c.creado_en,
+                c.actualizado_en,
+                v.marca,
+                v.modelo,
+                v.precio,
+                v.imagen,
+                v.estado,
+                buyer.first_name AS buyer_first_name,
+                buyer.last_name AS buyer_last_name,
+                buyer.email AS buyer_email,
+                seller.first_name AS seller_first_name,
+                seller.last_name AS seller_last_name,
+                seller.email AS seller_email,
+                seller.phone AS seller_phone,
+                last_msg.body AS last_message,
+                last_msg.sender_id AS last_sender_id,
+                last_msg.status AS last_status,
+                last_msg.creado_en AS last_message_at,
+                COALESCE(unread.unread_count, 0)::int AS unread_count
+             FROM conversaciones c
+             LEFT JOIN vehiculos v ON v.id = c.vehicle_id
+             LEFT JOIN usuarios buyer ON buyer.id = c.buyer_id
+             LEFT JOIN usuarios seller ON seller.id = c.seller_id
+             LEFT JOIN LATERAL (
+                SELECT m.body, m.sender_id, m.status, m.creado_en
+                FROM mensajes m
+                WHERE m.conversation_id = c.id
+                ORDER BY m.creado_en DESC
+                LIMIT 1
+             ) last_msg ON TRUE
+             LEFT JOIN LATERAL (
+                SELECT COUNT(*)::int AS unread_count
+                FROM mensajes m
+                WHERE m.conversation_id = c.id
+                  AND m.sender_id <> $1
+                  AND m.status <> 'read'
+             ) unread ON TRUE
+             WHERE c.buyer_id = $1 OR c.seller_id = $1
+             ORDER BY COALESCE(last_msg.creado_en, c.actualizado_en) DESC`,
+            [req.user.id]
+        );
+
+        res.status(200).json(result.rows);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, message: "Error interno del servidor." });
+    }
+});
+
+app.post('/conversations', authenticateToken, async (req, res) => {
+    const { vehicleId, sellerId, message } = req.body;
+    const buyerId = req.user.id;
+
+    if (!vehicleId || !sellerId) {
+        return res.status(400).json({ success: false, message: "Faltan datos para iniciar el chat." });
+    }
+
+    if (Number(sellerId) === Number(buyerId)) {
+        return res.status(400).json({ success: false, message: "No puedes iniciar un chat contigo mismo." });
+    }
+
+    try {
+        const vehicleCheck = await db.query('SELECT id, user_id FROM vehiculos WHERE id = $1', [vehicleId]);
+        if (vehicleCheck.rows.length === 0) {
+            return res.status(404).json({ success: false, message: "Vehiculo no encontrado." });
+        }
+
+        if (Number(vehicleCheck.rows[0].user_id) !== Number(sellerId)) {
+            return res.status(400).json({ success: false, message: "El vendedor no coincide con el vehiculo." });
+        }
+
+        const conversationResult = await db.query(
+            `INSERT INTO conversaciones (vehicle_id, buyer_id, seller_id)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (vehicle_id, buyer_id, seller_id)
+             DO UPDATE SET actualizado_en = CURRENT_TIMESTAMP
+             RETURNING *`,
+            [vehicleId, buyerId, sellerId]
+        );
+
+        const conversation = conversationResult.rows[0];
+        const cleanMessage = typeof message === 'string' ? message.trim() : '';
+
+        if (cleanMessage) {
+            await db.query(
+                `INSERT INTO mensajes (conversation_id, sender_id, body, status)
+                 VALUES ($1, $2, $3, 'sent')`,
+                [conversation.id, buyerId, cleanMessage]
+            );
+
+            await db.query(
+                'UPDATE conversaciones SET actualizado_en = CURRENT_TIMESTAMP WHERE id = $1',
+                [conversation.id]
+            );
+        }
+
+        res.status(201).json({ success: true, conversation });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, message: "Error interno del servidor." });
+    }
+});
+
+app.get('/conversations/:id/messages', authenticateToken, async (req, res) => {
+    const { id } = req.params;
+
+    try {
+        const conversation = await getConversationForUser(id, req.user.id);
+        if (!conversation) {
+            return res.status(404).json({ success: false, message: "Chat no encontrado." });
+        }
+
+        await db.query(
+            `UPDATE mensajes
+             SET status = 'read', read_at = COALESCE(read_at, CURRENT_TIMESTAMP)
+             WHERE conversation_id = $1 AND sender_id <> $2 AND status <> 'read'`,
+            [id, req.user.id]
+        );
+
+        const messages = await db.query(
+            `SELECT
+                m.id,
+                m.conversation_id,
+                m.sender_id,
+                m.body,
+                m.status,
+                m.read_at,
+                m.creado_en,
+                u.first_name,
+                u.last_name,
+                u.email
+             FROM mensajes m
+             LEFT JOIN usuarios u ON u.id = m.sender_id
+             WHERE m.conversation_id = $1
+             ORDER BY m.creado_en ASC`,
+            [id]
+        );
+
+        res.status(200).json({ conversation, messages: messages.rows });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, message: "Error interno del servidor." });
+    }
+});
+
+app.post('/conversations/:id/messages', authenticateToken, async (req, res) => {
+    const { id } = req.params;
+    const { body } = req.body;
+    const cleanBody = typeof body === 'string' ? body.trim() : '';
+
+    if (!cleanBody) {
+        return res.status(400).json({ success: false, message: "El mensaje no puede estar vacio." });
+    }
+
+    try {
+        const conversation = await getConversationForUser(id, req.user.id);
+        if (!conversation) {
+            return res.status(404).json({ success: false, message: "Chat no encontrado." });
+        }
+
+        const result = await db.query(
+            `INSERT INTO mensajes (conversation_id, sender_id, body, status)
+             VALUES ($1, $2, $3, 'sent')
+             RETURNING id, conversation_id, sender_id, body, status, read_at, creado_en`,
+            [id, req.user.id, cleanBody]
+        );
+
+        await db.query(
+            'UPDATE conversaciones SET actualizado_en = CURRENT_TIMESTAMP WHERE id = $1',
+            [id]
+        );
+
+        res.status(201).json({ success: true, message: result.rows[0] });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, message: "Error interno del servidor." });
+    }
+});
+
+app.patch('/conversations/:id/read', authenticateToken, async (req, res) => {
+    const { id } = req.params;
+
+    try {
+        const conversation = await getConversationForUser(id, req.user.id);
+        if (!conversation) {
+            return res.status(404).json({ success: false, message: "Chat no encontrado." });
+        }
+
+        await db.query(
+            `UPDATE mensajes
+             SET status = 'read', read_at = COALESCE(read_at, CURRENT_TIMESTAMP)
+             WHERE conversation_id = $1 AND sender_id <> $2 AND status <> 'read'`,
+            [id, req.user.id]
+        );
+
+        res.status(200).json({ success: true });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, message: "Error interno del servidor." });
     }
 });
 
