@@ -80,7 +80,7 @@ const authenticateToken = (req, res, next) => {
 
 // Ruta para el registro de usuarios
 app.post('/register', async (req, res) => {
-    const { email, password, firstName, lastName, phone, acceptTerms } = req.body;
+    const { email, password, firstName, lastName, phone, acceptTerms, documento } = req.body;
 
     // 1. Validación: Aceptar términos y condiciones
     if (!acceptTerms) {
@@ -123,8 +123,8 @@ app.post('/register', async (req, res) => {
 
         // 6. Guardar en la base de datos
         const insertResult = await db.query(
-            'INSERT INTO usuarios (email, password, first_name, last_name, phone, rol) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, rol',
-            [email, hashedPassword, firstName, lastName, phone, 'cliente']
+            'INSERT INTO usuarios (email, password, first_name, last_name, phone, rol, documento) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, rol',
+            [email, hashedPassword, firstName, lastName, phone, 'cliente', documento || null]
         );
 
         const newUser = insertResult.rows[0];
@@ -161,7 +161,7 @@ app.post('/register', async (req, res) => {
 // Ruta para obtener todos los usuarios (para probar en Postman)
 app.get('/users', async (req, res) => {
     try {
-        const result = await db.query('SELECT id, email, first_name, last_name, phone, rol, creado_en FROM usuarios');
+        const result = await db.query('SELECT id, email, first_name, last_name, phone, rol, creado_en, documento FROM usuarios');
         res.status(200).json(result.rows);
     } catch (error) {
         console.error(error);
@@ -173,7 +173,7 @@ app.get('/users', async (req, res) => {
 app.get('/users/:id', async (req, res) => {
     const { id } = req.params;
     try {
-        const result = await db.query('SELECT id, email, first_name, last_name, phone, rol, creado_en FROM usuarios WHERE id = $1', [id]);
+        const result = await db.query('SELECT id, email, first_name, last_name, phone, rol, creado_en, documento FROM usuarios WHERE id = $1', [id]);
         if (result.rows.length === 0) {
             return res.status(404).send("Usuario no encontrado.");
         }
@@ -187,7 +187,7 @@ app.get('/users/:id', async (req, res) => {
 // Ruta para actualizar completamente a un usuario (PUT)
 app.put('/users/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
-    const { email, password, firstName, lastName, phone } = req.body;
+    const { email, password, firstName, lastName, phone, documento } = req.body;
 
     if (!email || !password || !firstName || !lastName || !phone) {
         return res.status(400).send("Para usar PUT debes enviar todos los campos (email, password, firstName, lastName, phone).");
@@ -196,8 +196,8 @@ app.put('/users/:id', authenticateToken, async (req, res) => {
     try {
         const hashedPassword = await bcrypt.hash(password, 10);
         const result = await db.query(
-            'UPDATE usuarios SET email = $1, password = $2, first_name = $3, last_name = $4, phone = $5 WHERE id = $6',
-            [email, hashedPassword, firstName, lastName, phone, id]
+            'UPDATE usuarios SET email = $1, password = $2, first_name = $3, last_name = $4, phone = $5, documento = $6 WHERE id = $7',
+            [email, hashedPassword, firstName, lastName, phone, documento || null, id]
         );
 
         if (result.rowCount === 0) return res.status(404).send("Usuario no encontrado.");
@@ -211,10 +211,10 @@ app.put('/users/:id', authenticateToken, async (req, res) => {
 // Ruta para actualizar parcialmente a un usuario (PATCH)
 app.patch('/users/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
-    const { email, password, firstName, lastName, phone } = req.body;
+    const { email, password, firstName, lastName, phone, documento } = req.body;
 
     // Si no manda nada para cambiar, salimos
-    if (!email && !password && !firstName && !lastName && !phone) {
+    if (!email && !password && !firstName && !lastName && !phone && !documento) {
         return res.status(400).send("Debes enviar al menos un campo para actualizar.");
     }
 
@@ -249,6 +249,11 @@ app.patch('/users/:id', authenticateToken, async (req, res) => {
         if (phone) {
             updates.push(`phone = $${paramIndex++}`);
             values.push(phone);
+        }
+
+        if (documento) {
+            updates.push(`documento = $${paramIndex++}`);
+            values.push(documento);
         }
 
         query += updates.join(', ') + ` WHERE id = $${paramIndex}`;
@@ -301,7 +306,9 @@ app.post('/login', async (req, res) => {
             user: {
                 id: user.id,
                 email: user.email,
-                rol: user.rol
+                rol: user.rol,
+                first_name: user.first_name,
+                last_name: user.last_name
             },
             token
         });
@@ -349,7 +356,7 @@ app.delete('/users/:id', authenticateToken, async (req, res) => {
 
 // Ruta para publicar un nuevo vehículo (POST)
 app.post('/vehicles', authenticateToken, async (req, res) => {
-    const { userId, marca, modelo, año, precio, kilometraje, descripcion, imagen } = req.body;
+    const { userId, marca, modelo, año, precio, kilometraje, descripcion, imagen, cilindrada, tipo_vehiculo, tipo_transmision } = req.body;
 
     // Validación: Campos requeridos
     if (!userId || !marca || !modelo || !año || !precio) {
@@ -371,8 +378,8 @@ app.post('/vehicles', authenticateToken, async (req, res) => {
 
         // Insertar el vehículo en la base de datos
         const result = await db.query(
-            'INSERT INTO vehiculos (user_id, marca, modelo, año, precio, kilometraje, descripcion, imagen, estado) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id',
-            [userId, marca, modelo, año, precio, kilometraje || 0, descripcion || '', imagen || null, 'Activo']
+            'INSERT INTO vehiculos (user_id, marca, modelo, año, precio, kilometraje, descripcion, imagen, estado, cilindrada, tipo_vehiculo, tipo_transmision) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id',
+            [userId, marca, modelo, año, precio, kilometraje || 0, descripcion || '', imagen || null, 'Activo', cilindrada || null, tipo_vehiculo || null, tipo_transmision || null]
         );
 
         res.status(201).json({
@@ -394,7 +401,7 @@ app.post('/vehicles', authenticateToken, async (req, res) => {
 app.get('/vehicles', async (req, res) => {
     try {
         const result = await db.query(
-            'SELECT v.id, v.user_id, u.email, u.first_name, u.last_name, u.phone, v.marca, v.modelo, v.año, v.precio, v.kilometraje, v.descripcion, v.estado, v.imagen, v.creado_en FROM vehiculos v JOIN usuarios u ON v.user_id = u.id ORDER BY v.creado_en DESC'
+            'SELECT v.id, v.user_id, u.email, u.first_name, u.last_name, u.phone, v.marca, v.modelo, v.año, v.precio, v.kilometraje, v.descripcion, v.estado, v.imagen, v.cilindrada, v.tipo_vehiculo, v.tipo_transmision, v.creado_en FROM vehiculos v JOIN usuarios u ON v.user_id = u.id ORDER BY v.creado_en DESC'
         );
         res.status(200).json(result.rows);
     } catch (error) {
@@ -411,7 +418,7 @@ app.get('/vehicles/:id', async (req, res) => {
     const { id } = req.params;
     try {
         const result = await db.query(
-            'SELECT v.id, v.user_id, u.email, u.first_name, u.last_name, u.phone, v.marca, v.modelo, v.año, v.precio, v.kilometraje, v.descripcion, v.estado, v.imagen, v.creado_en FROM vehiculos v JOIN usuarios u ON v.user_id = u.id WHERE v.id = $1',
+            'SELECT v.id, v.user_id, u.email, u.first_name, u.last_name, u.phone, v.marca, v.modelo, v.año, v.precio, v.kilometraje, v.descripcion, v.estado, v.imagen, v.cilindrada, v.tipo_vehiculo, v.tipo_transmision, v.creado_en FROM vehiculos v JOIN usuarios u ON v.user_id = u.id WHERE v.id = $1',
             [id]
         );
 
@@ -431,7 +438,7 @@ app.get('/vehicles/user/:userId', async (req, res) => {
 
     try {
         const result = await db.query(
-            'SELECT id, user_id, marca, modelo, año, precio, kilometraje, descripcion, imagen, estado, creado_en FROM vehiculos WHERE user_id = $1 ORDER BY creado_en DESC',
+            'SELECT id, user_id, marca, modelo, año, precio, kilometraje, descripcion, imagen, estado, cilindrada, tipo_vehiculo, tipo_transmision, creado_en FROM vehiculos WHERE user_id = $1 ORDER BY creado_en DESC',
             [userId]
         );
         res.status(200).json(result.rows);
@@ -447,7 +454,7 @@ app.get('/vehicles/user/:userId', async (req, res) => {
 // Ruta para actualizar un vehículo (PUT)
 app.put('/vehicles/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
-    const { userId, marca, modelo, año, precio, kilometraje, descripcion, estado, imagen } = req.body;
+    const { userId, marca, modelo, año, precio, kilometraje, descripcion, estado, imagen, cilindrada, tipo_vehiculo, tipo_transmision } = req.body;
 
     if (!userId) {
         return res.status(401).json({ success: false, message: "No autorizado. Falta userId." });
@@ -467,8 +474,8 @@ app.put('/vehicles/:id', authenticateToken, async (req, res) => {
         }
 
         const result = await db.query(
-            'UPDATE vehiculos SET marca = $1, modelo = $2, año = $3, precio = $4, kilometraje = $5, descripcion = $6, estado = $7, imagen = $8, actualizado_en = CURRENT_TIMESTAMP WHERE id = $9',
-            [marca, modelo, año, precio, kilometraje || 0, descripcion || '', estado || 'Activo', imagen || null, id]
+            'UPDATE vehiculos SET marca = $1, modelo = $2, año = $3, precio = $4, kilometraje = $5, descripcion = $6, estado = $7, imagen = $8, cilindrada = $9, tipo_vehiculo = $10, tipo_transmision = $11, actualizado_en = CURRENT_TIMESTAMP WHERE id = $12',
+            [marca, modelo, año, precio, kilometraje || 0, descripcion || '', estado || 'Activo', imagen || null, cilindrada || null, tipo_vehiculo || null, tipo_transmision || null, id]
         );
 
         if (result.rowCount === 0) {
@@ -577,6 +584,9 @@ app.get('/conversations', authenticateToken, async (req, res) => {
                 v.precio,
                 v.imagen,
                 v.estado,
+                v.cilindrada,
+                v.tipo_vehiculo,
+                v.tipo_transmision,
                 buyer.first_name AS buyer_first_name,
                 buyer.last_name AS buyer_last_name,
                 buyer.email AS buyer_email,
