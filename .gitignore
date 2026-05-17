@@ -3,3 +3,7 @@ node_modules/
 *.log
 .next   
 Cali_Motors_Front/
+
+# Variables de entorno
+.env
+.env.*

@@ -80,15 +80,7 @@ const authenticateToken = (req, res, next) => {
 
 // Ruta para el registro de usuarios
 app.post('/register', async (req, res) => {
-    const { email, password, firstName, lastName, phone, acceptTerms, documento } = req.body;
-
-    // 1. Validación: Aceptar términos y condiciones
-    if (!acceptTerms) {
-        return res.status(400).json({
-            success: false,
-            message: "Debes aceptar los términos y condiciones."
-        });
-    }
+    const { email, password, firstName, lastName, phone, documento } = req.body;
 
     // 2. Validación: Campos requeridos
     if (!email || !password || !firstName || !lastName || !phone) {
