@@ -52,6 +52,17 @@ const initializeChatTables = async () => {
         )
     `);
 
+    await db.query(`
+        CREATE TABLE IF NOT EXISTS financiamientos (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+            vehicle_id INTEGER NOT NULL REFERENCES vehiculos(id) ON DELETE CASCADE,
+            monto_financiado NUMERIC(12, 2) NOT NULL,
+            plazo_meses INTEGER NOT NULL,
+            estado VARCHAR(20) NOT NULL DEFAULT 'En proceso'
+        )
+    `);
+
     await db.query('CREATE INDEX IF NOT EXISTS idx_conversaciones_users ON conversaciones (buyer_id, seller_id)');
     await db.query('CREATE INDEX IF NOT EXISTS idx_mensajes_conversation ON mensajes (conversation_id, creado_en)');
 };
@@ -389,11 +400,11 @@ app.post('/vehicles', authenticateToken, async (req, res) => {
     }
 });
 
-// Ruta para obtener todos los vehículos (GET)
+// Ruta para obtener todos los vehículos (GET) - SOLO ACTIVOS
 app.get('/vehicles', async (req, res) => {
     try {
         const result = await db.query(
-            'SELECT v.id, v.user_id, u.email, u.first_name, u.last_name, u.phone, v.marca, v.modelo, v.año, v.precio, v.kilometraje, v.descripcion, v.estado, v.imagen, v.cilindrada, v.tipo_vehiculo, v.tipo_transmision, v.creado_en FROM vehiculos v JOIN usuarios u ON v.user_id = u.id ORDER BY v.creado_en DESC'
+            "SELECT v.id, v.user_id, u.email, u.first_name, u.last_name, u.phone, v.marca, v.modelo, v.año, v.precio, v.kilometraje, v.descripcion, v.estado, v.imagen, v.cilindrada, v.tipo_vehiculo, v.tipo_transmision, v.creado_en FROM vehiculos v JOIN usuarios u ON v.user_id = u.id WHERE v.estado = 'Activo' ORDER BY v.creado_en DESC"
         );
         res.status(200).json(result.rows);
     } catch (error) {
@@ -526,6 +537,88 @@ app.delete('/vehicles/:id', authenticateToken, async (req, res) => {
             success: false,
             message: "Error interno del servidor."
         });
+    }
+});
+
+// Ruta para solicitar financiación (POST)
+app.post('/financiamientos', authenticateToken, async (req, res) => {
+    const { vehicleId, montoFinanciado, plazoMeses } = req.body;
+    const userId = req.user.id;
+
+    if (!vehicleId || !montoFinanciado || !plazoMeses) {
+        return res.status(400).json({ success: false, message: "Faltan datos para la financiación." });
+    }
+
+    try {
+        // Verificar si el vehiculo existe y está activo
+        const vehicleCheck = await db.query('SELECT estado FROM vehiculos WHERE id = $1', [vehicleId]);
+        if (vehicleCheck.rows.length === 0) {
+            return res.status(404).json({ success: false, message: "Vehículo no encontrado." });
+        }
+        
+        if (vehicleCheck.rows[0].estado === 'Vendido') {
+            return res.status(400).json({ success: false, message: "Este vehículo ya fue vendido o está en proceso." });
+        }
+
+        // Crear registro en financiamientos
+        const insertResult = await db.query(
+            `INSERT INTO financiamientos (user_id, vehicle_id, monto_financiado, plazo_meses, estado)
+             VALUES ($1, $2, $3, $4, 'En proceso') RETURNING id`,
+            [userId, vehicleId, montoFinanciado, plazoMeses]
+        );
+        const financiamientoId = insertResult.rows[0].id;
+
+        // Actualizar el estado del vehículo a "Vendido"
+        await db.query("UPDATE vehiculos SET estado = 'Vendido' WHERE id = $1", [vehicleId]);
+
+        // Simular proceso de aprobación asíncrono (15 segundos)
+        setTimeout(async () => {
+            try {
+                // Generar decisión aleatoria: 50% Confirmado, 50% Denegado
+                const nuevoEstado = Math.random() >= 0.5 ? 'Confirmado' : 'Denegado';
+                await db.query(
+                    'UPDATE financiamientos SET estado = $1 WHERE id = $2',
+                    [nuevoEstado, financiamientoId]
+                );
+                
+                // Si es denegado, volvemos a poner el vehículo Activo
+                if (nuevoEstado === 'Denegado') {
+                    await db.query("UPDATE vehiculos SET estado = 'Activo' WHERE id = $1", [vehicleId]);
+                }
+                
+                console.log(`Financiamiento ${financiamientoId} procesado: ${nuevoEstado}`);
+            } catch (err) {
+                console.error('Error en proceso asincrono de financiamiento:', err);
+            }
+        }, 15000); // 15 segundos
+
+        res.status(201).json({
+            success: true,
+            message: "Solicitud de financiación enviada y en proceso.",
+            financiamientoId
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, message: "Error interno del servidor." });
+    }
+});
+
+// Ruta para obtener financiaciones del usuario (GET)
+app.get('/financiamientos', authenticateToken, async (req, res) => {
+    try {
+        const result = await db.query(
+            `SELECT f.id, f.monto_financiado, f.plazo_meses, f.estado, 
+                    v.marca, v.modelo, v.imagen, v.precio, v.id as vehicle_id
+             FROM financiamientos f
+             JOIN vehiculos v ON f.vehicle_id = v.id
+             WHERE f.user_id = $1
+             ORDER BY f.id DESC`,
+            [req.user.id]
+        );
+        res.status(200).json(result.rows);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, message: "Error interno del servidor." });
     }
 });
 
