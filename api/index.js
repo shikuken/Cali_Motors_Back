@@ -555,7 +555,7 @@ app.post('/financiamientos', authenticateToken, async (req, res) => {
         if (vehicleCheck.rows.length === 0) {
             return res.status(404).json({ success: false, message: "Vehículo no encontrado." });
         }
-        
+
         if (vehicleCheck.rows[0].estado === 'Vendido') {
             return res.status(400).json({ success: false, message: "Este vehículo ya fue vendido o está en proceso." });
         }
@@ -580,17 +580,17 @@ app.post('/financiamientos', authenticateToken, async (req, res) => {
                     'UPDATE financiamientos SET estado = $1 WHERE id = $2',
                     [nuevoEstado, financiamientoId]
                 );
-                
+
                 // Si es denegado, volvemos a poner el vehículo Activo
                 if (nuevoEstado === 'Denegado') {
                     await db.query("UPDATE vehiculos SET estado = 'Activo' WHERE id = $1", [vehicleId]);
                 }
-                
+
                 console.log(`Financiamiento ${financiamientoId} procesado: ${nuevoEstado}`);
             } catch (err) {
                 console.error('Error en proceso asincrono de financiamiento:', err);
             }
-        }, 15000); // 15 segundos
+        }, 10000); // 10 segundos
 
         res.status(201).json({
             success: true,
